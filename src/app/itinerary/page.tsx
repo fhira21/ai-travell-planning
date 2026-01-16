@@ -1,18 +1,17 @@
-// src/app/itinerary/page.tsx
 "use client";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { getItinerary } from "@/lib/getItinerary";
-import { 
-  Download, 
-  Printer, 
-  Share2, 
+import {
+  Download,
+  Printer,
+  Share2,
   ArrowLeft,
-  Calendar, 
-  MapPin, 
-  DollarSign, 
-  Clock, 
+  Calendar,
+  MapPin,
+  DollarSign,
+  Clock,
   Utensils,
   Hotel,
   Plane,
@@ -43,33 +42,44 @@ import jsPDF from "jspdf";
 // Helper function untuk format data
 const formatItineraryData = (data: any) => {
   if (!data) return null;
-  
-  // Jika data sudah memiliki struktur yang tepat dari AI
-  if (data.transportation || data.accommodation || data.itinerary) {
-    return data;
-  }
-  
-  // Jika data adalah raw JSON string atau object dengan struktur berbeda
-  if (typeof data === 'string') {
+
+  // 🔴 JIKA STRING (AI kirim markdown)
+  if (typeof data === "string") {
     try {
-      const parsed = JSON.parse(data);
-      return parsed;
+      const cleaned = data
+        .replace(/```json/g, "")
+        .replace(/```/g, "")
+        .trim();
+
+      const parsed = JSON.parse(cleaned);
+      return normalizeItinerary(parsed);
     } catch {
-      // Jika bukan JSON, anggap sebagai raw text
-      return { 
-        raw: data,
-        itinerary: []
-      };
+      return { raw: data };
     }
   }
-  
-  // Jika data adalah array (mungkin langsung itinerary)
-  if (Array.isArray(data)) {
-    return { itinerary: data };
-  }
-  
-  return data;
+
+  // 🔴 JIKA OBJECT LANGSUNG
+  return normalizeItinerary(data);
 };
+
+const normalizeItinerary = (parsed: any) => {
+  // Jika itinerary masih object (day1, day2, ...)
+  if (
+    parsed.itinerary &&
+    !Array.isArray(parsed.itinerary) &&
+    typeof parsed.itinerary === "object"
+  ) {
+    parsed.itinerary = Object.entries(parsed.itinerary).map(
+      ([key, value]: any, index) => ({
+        day: index + 1,
+        ...value,
+      })
+    );
+  }
+
+  return parsed;
+};
+
 
 export default function ItineraryPage() {
   const router = useRouter();
@@ -97,7 +107,7 @@ export default function ItineraryPage() {
       setLoading(true);
       setError(null);
       const res = await getItinerary(data);
-      
+
       if (!res.success) {
         setError("AI sedang sibuk. Coba beberapa saat lagi atau perbarui data perjalanan Anda.");
       } else {
@@ -117,7 +127,55 @@ export default function ItineraryPage() {
     try {
       setIsGeneratingPDF(true);
       const element = document.getElementById("itinerary-content");
-      
+      if (!element) return;
+
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: "#ffffff",
+      });
+
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF("p", "mm", "a4");
+
+      const pageWidth = 210;
+      const pageHeight = 297;
+      const imgHeight = (canvas.height * pageWidth) / canvas.width;
+
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      pdf.addImage(imgData, "PNG", 0, position, pageWidth, imgHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft > 0) {
+        position -= pageHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, position, pageWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
+      pdf.save(
+        `itinerary-${payload?.transportation?.to || "trip"}-${new Date()
+          .toISOString()
+          .split("T")[0]}.pdf`
+      );
+    } catch (err) {
+      console.error(err);
+      alert("Gagal membuat PDF");
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
+
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const handleShare = async () => {
+    try {
+      const element = document.getElementById("itinerary-content");
       if (!element) {
         alert("Konten itinerary tidak ditemukan");
         return;
@@ -125,46 +183,56 @@ export default function ItineraryPage() {
 
       const canvas = await html2canvas(element, {
         scale: 2,
+        backgroundColor: "#ffffff",
         useCORS: true,
-        logging: false,
-        backgroundColor: "#ffffff"
       });
 
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const imgWidth = 210;
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF("p", "mm", "a4");
+
+      const pageWidth = 210;
+      const pageHeight = 297;
+      const imgWidth = pageWidth;
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      
-      pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
-      pdf.save(`itinerary-${payload?.transportation?.to || 'perjalanan'}-${new Date().toISOString().split('T')[0]}.pdf`);
-      
-    } catch (err) {
-      console.error('Error generating PDF:', err);
-      alert('Gagal mengunduh PDF. Coba lagi.');
-    } finally {
-      setIsGeneratingPDF(false);
-    }
-  };
 
-  const handlePrint = () => {
-    window.print();
-  };
+      let heightLeft = imgHeight;
+      let position = 0;
 
-  const handleShare = () => {
-    if (navigator.share) {
-      navigator.share({
-        title: `Itinerary ${payload?.transportation?.to || 'Perjalanan'}`,
-        text: `Lihat itinerary perjalanan ke ${payload?.transportation?.to || 'tujuan'} yang sudah saya rencanakan!`,
-        url: window.location.href,
+      pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft > 0) {
+        position -= pageHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, "PNG", 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
+      const pdfBlob = pdf.output("blob");
+      const fileName = `itinerary-${payload?.transportation?.to || "perjalanan"}.pdf`;
+
+      const file = new File([pdfBlob], fileName, {
+        type: "application/pdf",
       });
-    } else {
-      navigator.clipboard.writeText(window.location.href);
-      alert('Link berhasil disalin ke clipboard!');
+
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          title: "Itinerary Perjalanan",
+          text: "Berikut itinerary perjalanan dalam bentuk PDF",
+          files: [file],
+        });
+      } else {
+        pdf.save(fileName);
+        alert("Perangkat tidak mendukung share file, PDF diunduh otomatis.");
+      }
+    } catch (err) {
+      console.error("Share PDF error:", err);
+      alert("Gagal membagikan PDF");
     }
   };
 
   const getTransportIcon = (mode: string) => {
-    switch(mode) {
+    switch (mode) {
       case 'Pesawat': return <Plane className="w-5 h-5" />;
       case 'Kereta': return <Train className="w-5 h-5" />;
       case 'Bus': return <Car className="w-5 h-5" />;
@@ -177,7 +245,7 @@ export default function ItineraryPage() {
 
   const formatCurrency = (amount: string | number) => {
     if (!amount || amount === '0') return 'Rp 0';
-    
+
     // Jika string seperti "500.000 - 1.000.000"
     if (typeof amount === 'string' && amount.includes('-')) {
       const parts = amount.split('-').map(part => {
@@ -191,7 +259,7 @@ export default function ItineraryPage() {
       });
       return parts.join(' - ');
     }
-    
+
     const num = typeof amount === 'string' ? parseInt(amount.replace(/[^\d]/g, '')) || 0 : amount;
     return new Intl.NumberFormat('id-ID', {
       style: 'currency',
@@ -229,9 +297,35 @@ export default function ItineraryPage() {
             {typeof formattedData.transportation === 'string' ? (
               <p className="text-gray-700">{formattedData.transportation}</p>
             ) : (
-              <pre className="whitespace-pre-wrap text-gray-700 bg-white/50 p-4 rounded-lg">
-                {JSON.stringify(formattedData.transportation, null, 2)}
-              </pre>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray-500">Rekomendasi</p>
+                  <p className="font-semibold text-gray-800">
+                    {formattedData.transportation.recommended}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm text-gray-500">Durasi</p>
+                  <p className="font-semibold text-gray-800">
+                    {formattedData.transportation.duration}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm text-gray-500">Estimasi Harga</p>
+                  <p className="font-semibold text-gray-800">
+                    {formattedData.transportation.estimated_price}
+                  </p>
+                </div>
+
+                {formattedData.transportation.notes && (
+                  <div className="md:col-span-2">
+                    <p className="text-sm text-gray-500">Catatan</p>
+                    <p className="text-gray-700">{formattedData.transportation.notes}</p>
+                  </div>
+                )}
+              </div>
             )}
           </div>
         )}
@@ -246,9 +340,35 @@ export default function ItineraryPage() {
             {typeof formattedData.accommodation === 'string' ? (
               <p className="text-gray-700">{formattedData.accommodation}</p>
             ) : (
-              <pre className="whitespace-pre-wrap text-gray-700 bg-white/50 p-4 rounded-lg">
-                {JSON.stringify(formattedData.accommodation, null, 2)}
-              </pre>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-gray-500">Area Rekomendasi</p>
+                  <p className="font-semibold text-gray-800">
+                    {formattedData.accommodation.recommended_area}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm text-gray-500">Tipe</p>
+                  <p className="font-semibold text-gray-800">
+                    {formattedData.accommodation.type}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm text-gray-500">Harga / Malam</p>
+                  <p className="font-semibold text-gray-800">
+                    {formattedData.accommodation.price_per_night}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-sm text-gray-500">Total</p>
+                  <p className="font-semibold text-gray-800">
+                    {formattedData.accommodation.total_price}
+                  </p>
+                </div>
+              </div>
             )}
           </div>
         )}
@@ -260,11 +380,11 @@ export default function ItineraryPage() {
               <Calendar className="w-7 h-7 text-emerald-600" />
               Jadwal Harian dari AI
             </h3>
-            
+
             <div className="space-y-6">
               {formattedData.itinerary.map((day: any, index: number) => (
-                <div 
-                  key={index} 
+                <div
+                  key={index}
                   className="bg-gradient-to-r from-gray-50 to-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all duration-300"
                 >
                   <div className="bg-gradient-to-r from-blue-500 to-purple-500 text-white p-5">
@@ -286,7 +406,7 @@ export default function ItineraryPage() {
                       )}
                     </div>
                   </div>
-                  
+
                   <div className="p-6">
                     {/* Jika formatnya object dengan morning, afternoon, evening */}
                     {day.morning || day.afternoon || day.evening ? (
@@ -304,7 +424,7 @@ export default function ItineraryPage() {
                             </div>
                           </div>
                         )}
-                        
+
                         {day.afternoon && (
                           <div className="space-y-4">
                             <div className="flex items-start gap-4">
@@ -318,7 +438,7 @@ export default function ItineraryPage() {
                             </div>
                           </div>
                         )}
-                        
+
                         {day.evening && (
                           <div className="space-y-4">
                             <div className="flex items-start gap-4">
@@ -339,7 +459,7 @@ export default function ItineraryPage() {
                         {typeof day === 'string' ? day : JSON.stringify(day, null, 2)}
                       </div>
                     )}
-                    
+
                     {day.notes && (
                       <div className="mt-6 pt-6 border-t border-gray-200">
                         <h6 className="font-semibold text-gray-700 mb-2 flex items-center gap-2">
@@ -368,10 +488,12 @@ export default function ItineraryPage() {
             ) : (
               <div className="space-y-4">
                 {Object.entries(formattedData.cost_summary).map(([key, value]) => (
-                  <div key={key} className="flex justify-between items-center py-2 border-b border-emerald-200">
-                    <span className="text-gray-600 capitalize">{key.replace(/_/g, ' ')}</span>
+                  <div key={key} className="flex justify-between items-center py-2">
+                    <span className="capitalize text-gray-600">
+                      {key.replace("_", " ")}
+                    </span>
                     <span className="font-bold text-gray-800">
-                      {typeof value === 'number' ? formatCurrency(value) : String(value)}
+                      {formatCurrency(value as string)}
                     </span>
                   </div>
                 ))}
@@ -483,7 +605,7 @@ export default function ItineraryPage() {
                 </>
               )}
             </button>
-            
+
             <button
               onClick={handlePrint}
               className="flex items-center gap-2 px-5 py-2.5 bg-white text-gray-700 border border-gray-300 rounded-xl font-semibold hover:bg-gray-50 hover:shadow-lg transition-all"
@@ -491,7 +613,7 @@ export default function ItineraryPage() {
               <Printer className="w-5 h-5" />
               Print
             </button>
-            
+
             <button
               onClick={handleShare}
               className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl font-semibold hover:shadow-lg transform hover:-translate-y-0.5 transition-all"
@@ -534,7 +656,7 @@ export default function ItineraryPage() {
                         <p className="text-white/80">Dibuat khusus untuk Anda</p>
                       </div>
                     </div>
-                    
+
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mt-6">
                       <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4">
                         <div className="text-2xl font-bold">{payload?.trip?.days || 3}</div>
@@ -554,7 +676,7 @@ export default function ItineraryPage() {
                       </div>
                     </div>
                   </div>
-                  
+
                   <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6">
                     <h3 className="font-bold text-lg mb-3">Budget</h3>
                     <div className="space-y-2">
@@ -651,31 +773,43 @@ export default function ItineraryPage() {
         {/* Print Styles */}
         <style jsx global>{`
           @media print {
-            body * {
-              visibility: hidden;
-            }
-            #itinerary-content,
-            #itinerary-content * {
-              visibility: visible;
-            }
-            #itinerary-content {
-              position: absolute;
-              left: 0;
-              top: 0;
-              width: 100%;
-              box-shadow: none;
-              background: white;
-            }
-            button {
-              display: none !important;
-            }
-            .bg-gradient-to-r {
-              background: linear-gradient(to right, #e0e7ff, #f3f4f6) !important;
-            }
-            .text-transparent {
-              color: #111827 !important;
-            }
-          }
+  body {
+    background: white !important;
+  }
+
+  button {
+    display: none !important;
+  }
+
+  .shadow,
+  .shadow-lg,
+  .shadow-2xl {
+    box-shadow: none !important;
+  }
+
+  .bg-gradient-to-r {
+    background: #ffffff !important;
+  }
+
+  .rounded-2xl,
+  .rounded-3xl {
+    border-radius: 8px !important;
+  }
+
+  .text-transparent {
+    color: #111827 !important;
+  }
+
+  svg {
+    color: #111827 !important;
+  }
+
+  #itinerary-content {
+    width: 100%;
+    padding: 0;
+  }
+}
+
         `}</style>
       </div>
     </main>

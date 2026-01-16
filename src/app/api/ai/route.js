@@ -21,34 +21,77 @@ export async function POST(req) {
     });
 
     const prompt = `
-You are an expert travel planner. Based on the input JSON, create a detailed itinerary including:
-1) Recommended transport option(s) with estimated price and duration
-2) Recommended accommodation with estimated nightly & total cost
-3) A day-by-day itinerary
-4) Summary of total estimated costs
-5) Travel tips
+You are a professional travel planner AI.
 
-Input JSON:
+STRICT RULES:
+- Output MUST be valid JSON
+- DO NOT add explanations
+- DO NOT use markdown
+- DO NOT wrap with \`\`\`
+- Use EXACT structure below
+
+JSON STRUCTURE:
+{
+  "transportation": {
+    "recommended": string,
+    "duration": string,
+    "estimated_price": string,
+    "notes": string
+  },
+  "accommodation": {
+    "recommended_area": string,
+    "type": string,
+    "price_per_night": string,
+    "total_price": string
+  },
+  "itinerary": [
+    {
+      "day": number,
+      "title": string,
+      "morning": string,
+      "afternoon": string,
+      "evening": string,
+      "estimated_cost": string,
+      "notes": string
+    }
+  ],
+  "cost_summary": {
+    "transportation": string,
+    "accommodation": string,
+    "activities": string,
+    "total": string
+  },
+  "tips": [string],
+  "recommendations": string
+}
+
+INPUT DATA:
 ${JSON.stringify({ transportation, accommodation, trip }, null, 2)}
-
-Return ONLY valid JSON.
 `;
+
 
     const completion = await groq.chat.completions.create({
       model: "llama-3.1-8b-instant",
       messages: [{ role: "user", content: prompt }],
-      temperature: 0.2,
+      temperature: 0,        // 🔴 WAJIB
       max_tokens: 1200,
     });
+
 
     const text = completion.choices?.[0]?.message?.content ?? "";
 
     let parsed;
     try {
-      parsed = JSON.parse(text);
+      const cleaned = text
+        .replace(/```json/g, "")
+        .replace(/```/g, "")
+        .trim();
+
+      parsed = JSON.parse(cleaned);
     } catch {
       parsed = { raw: text };
     }
+
 
     return new Response(
       JSON.stringify({ success: true, data: parsed }),
