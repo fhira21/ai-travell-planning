@@ -1,0 +1,7 @@
+﻿.next/dev/types/validator.ts(80,39): error TS2307: Cannot find module '../../../src/app/itinerary/page.js' or its corresponding type declarations.
+src/components/travel/travel-planner-form.tsx(255,50): error TS2304: Cannot find name 'opt'.
+src/components/travel/travel-planner-form.tsx(258,82): error TS2304: Cannot find name 'opt'.
+src/components/travel/travel-planner-form.tsx(259,108): error TS2304: Cannot find name 'opt'.
+src/components/travel/travel-planner-form.tsx(259,132): error TS2304: Cannot find name 'opt'.
+src/components/travel/travel-planner-form.tsx(264,70): error TS2304: Cannot find name 'opt'.
+src/components/travel/travel-planner-form.tsx(269,46): error TS2304: Cannot find name 'opt'.
